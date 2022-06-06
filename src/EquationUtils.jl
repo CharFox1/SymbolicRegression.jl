@@ -1,58 +1,63 @@
-module EquationUtilsModule
+using FromFile
+@from "Core.jl" import CONST_TYPE, Node, copyNode, Options
 
-import ..CoreModule: CONST_TYPE, Node, copy_node, Options
+# for symbolic constraints
+using PyCall
+#sympy = pyimport("sympy")
 
 # Count the operators, constants, variables in an equation
-function count_nodes(tree::Node)::Int
+function countNodes(tree::Node)::Int
     if tree.degree == 0
         return 1
     elseif tree.degree == 1
-        return 1 + count_nodes(tree.l)
+        return 1 + countNodes(tree.l)
     else
-        return 1 + count_nodes(tree.l) + count_nodes(tree.r)
+        return 1 + countNodes(tree.l) + countNodes(tree.r)
     end
 end
 
 # Count the max depth of a tree
-function count_depth(tree::Node)::Int
+function countDepth(tree::Node)::Int
     if tree.degree == 0
         return 1
     elseif tree.degree == 1
-        return 1 + count_depth(tree.l)
+        return 1 + countDepth(tree.l)
     else
-        return 1 + max(count_depth(tree.l), count_depth(tree.r))
+        return 1 + max(countDepth(tree.l), countDepth(tree.r))
     end
 end
 
+
 # Count the number of unary operators in the equation
-function count_unary_operators(tree::Node)::Int
+function countUnaryOperators(tree::Node)::Int
     if tree.degree == 0
         return 0
     elseif tree.degree == 1
-        return 1 + count_unary_operators(tree.l)
+        return 1 + countUnaryOperators(tree.l)
     else
-        return 0 + count_unary_operators(tree.l) + count_unary_operators(tree.r)
+        return 0 + countUnaryOperators(tree.l) + countUnaryOperators(tree.r)
     end
 end
 
 # Count the number of binary operators in the equation
-function count_binary_operators(tree::Node)::Int
+function countBinaryOperators(tree::Node)::Int
     if tree.degree == 0
         return 0
     elseif tree.degree == 1
-        return 0 + count_binary_operators(tree.l)
+        return 0 + countBinaryOperators(tree.l)
     else
-        return 1 + count_binary_operators(tree.l) + count_binary_operators(tree.r)
+        return 1 + countBinaryOperators(tree.l) + countBinaryOperators(tree.r)
     end
 end
 
 # Count the number of operators in the equation
-function count_operators(tree::Node)::Int
-    return count_unary_operators(tree) + count_binary_operators(tree)
+function countOperators(tree::Node)::Int
+    return countUnaryOperators(tree) + countBinaryOperators(tree)
 end
 
+
 # Count the number of constants in an equation
-function count_constants(tree::Node)::Int
+function countConstants(tree::Node)::Int
     if tree.degree == 0
         if tree.constant
             return 1
@@ -60,52 +65,15 @@ function count_constants(tree::Node)::Int
             return 0
         end
     elseif tree.degree == 1
-        return 0 + count_constants(tree.l)
+        return 0 + countConstants(tree.l)
     else
-        return 0 + count_constants(tree.l) + count_constants(tree.r)
+        return 0 + countConstants(tree.l) + countConstants(tree.r)
     end
 end
 
-"""
-Compute the complexity of a tree.
-
-By default, this is the number of nodes in a tree.
-However, it could use the custom settings in options.complexity_mapping
-if these are defined.
-"""
-function compute_complexity(tree::Node, options::Options)::Int
-    if options.complexity_mapping.use
-        return round(Int, _compute_complexity(tree, options))
-    else
-        return count_nodes(tree)
-    end
-end
-
-function _compute_complexity(
-    tree::Node, options::Options{A,B,dA,dB,C,complexity_type}
-)::complexity_type where {A,B,dA,dB,C,complexity_type<:Real}
-    if tree.degree == 0
-        if tree.constant
-            return options.complexity_mapping.constant_complexity
-        else
-            return options.complexity_mapping.variable_complexity
-        end
-    elseif tree.degree == 1
-        return (
-            options.complexity_mapping.unaop_complexities[tree.op] +
-            _compute_complexity(tree.l, options)
-        )
-    else # tree.degree == 2
-        return (
-            options.complexity_mapping.binop_complexities[tree.op] +
-            _compute_complexity(tree.l, options) +
-            _compute_complexity(tree.r, options)
-        )
-    end
-end
 
 # Get all the constants from a tree
-function get_constants(tree::Node)::AbstractVector{CONST_TYPE}
+function getConstants(tree::Node)::AbstractVector{CONST_TYPE}
     if tree.degree == 0
         if tree.constant
             return [tree.val]
@@ -113,67 +81,108 @@ function get_constants(tree::Node)::AbstractVector{CONST_TYPE}
             return CONST_TYPE[]
         end
     elseif tree.degree == 1
-        return get_constants(tree.l)
+        return getConstants(tree.l)
     else
-        both = [get_constants(tree.l), get_constants(tree.r)]
+        both = [getConstants(tree.l), getConstants(tree.r)]
         return [constant for subtree in both for constant in subtree]
     end
 end
 
 # Set all the constants inside a tree
-function set_constants(tree::Node, constants::AbstractVector{T}) where {T<:Real}
+function setConstants(tree::Node, constants::AbstractVector{T}) where {T<:Real}
     if tree.degree == 0
         if tree.constant
             tree.val = convert(CONST_TYPE, constants[1])
         end
     elseif tree.degree == 1
-        set_constants(tree.l, constants)
+        setConstants(tree.l, constants)
     else
-        numberLeft = count_constants(tree.l)
-        set_constants(tree.l, constants)
-        set_constants(tree.r, constants[(numberLeft + 1):end])
+        numberLeft = countConstants(tree.l)
+        setConstants(tree.l, constants)
+        setConstants(tree.r, constants[numberLeft+1:end])
     end
 end
 
-## Assign index to nodes of a tree
-# This will mirror a Node struct, rather
-# than adding a new attribute to Node.
-mutable struct NodeIndex
-    constant_index::Int  # Index of this constant (if a constant exists here)
-    l::NodeIndex
-    r::NodeIndex
+# custom function to check if expression is monontonically increasing
+py"""
+import sympy
+def is_monotonic_increasing(expr, interval, var):
+    # get critical points as list
+    turning_points = list(sympy.solveset(expr.diff(var), var, interval))
+    turning_points.sort()
+    print("turning points =", turning_points)
 
-    NodeIndex() = new()
-end
+    # failed to find critical points
+    # there could be 0 or infinite...
+    if (turning_points == []):
+        # fall back to simpler increasing function
+        return sympy.is_increasing(expr, sympy.Interval(0,sympy.oo), var)
 
-function index_constants(tree::Node)::NodeIndex
-    return index_constants(tree, 0)
-end
+    increasing = 1
 
-function index_constants(tree::Node, left_index::Int)::NodeIndex
-    index_tree = NodeIndex()
-    index_constants(tree, index_tree, left_index)
-    return index_tree
-end
+    #print("turning points = ", turning_points)
+    # turn to false if interval from start of main interval to first critical point not increasing
+    increasing = min(increasing, sympy.is_increasing(expr, sympy.Interval(interval.start, turning_points[0]), var))
+    # check intervals between all critical points
+    for i in range(len(turning_points)-1):
+        thisPoint = turning_points[i]
+        nextPoint = turning_points[i+1]
+        increasing = min(increasing, sympy.is_increasing(expr, sympy.Interval(thisPoint, nextPoint), var))
+    # check last interval
+    increasing = min(increasing, sympy.is_increasing(expr, sympy.Interval(turning_points[-1], interval.end), var))
+    return bool(increasing)
+"""
 
-# Count how many constants to the left of this node, and put them in a tree
-function index_constants(tree::Node, index_tree::NodeIndex, left_index::Int)
-    if tree.degree == 0
-        if tree.constant
-            index_tree.constant_index = left_index + 1
+# no parameters to fill variant
+function thermoConstraints(expr::PyObject, var::PyObject)
+
+    # don't do this here :(
+    #sympy = pyimport("sympy")
+    #var = sympy.symbols("p")
+    #expr = sympy.parse_expr(expr)
+
+    #println("expression:", expr)
+    results = [true, true, true]
+
+    
+    # Axiom 1: the expr needs to pass through the origin
+    try
+        if sympy.limit(expr, var, 0, "+") != 0
+            #println("constraint 1")
+            results[1] = false
         end
-    elseif tree.degree == 1
-        index_tree.constant_index = count_constants(tree.l)
-        index_tree.l = NodeIndex()
-        index_constants(tree.l, index_tree.l, left_index)
-    else
-        index_tree.l = NodeIndex()
-        index_tree.r = NodeIndex()
-        index_constants(tree.l, index_tree.l, left_index)
-        index_tree.constant_index = count_constants(tree.l)
-        left_index_here = left_index + index_tree.constant_index
-        index_constants(tree.r, index_tree.r, left_index_here)
+    catch error
+        #println(error)
+        #println("SymPy cannot evaluate Axiom 1")
+        results[1] = false
     end
-end
+    # Axiom 2: the expr needs to converge to Henry's Law at zero pressure
+    try
+        if (sympy.limit(sympy.diff(expr, var), var, 0) == sympy.oo 
+            || sympy.limit(sympy.diff(expr, var), var, 0) == -sympy.oo 
+            || sympy.limit(sympy.diff(expr, var), var, 0) == 0)
+            #println("constraint 2")
+            results[2] = false
+        end
+    catch error
+        #println(error)
+        #println("SymPy cannot evaluate Axiom 2")
+        results[2] = false
+    end
+
+    # Axiom 3: the expr must be strictly increasing as pressure increases
+    try
+        # use custom function because sympy doesn't work as expected
+        if !(py"is_monotonic_increasing"(expr, sympy.Interval(0,sympy.oo), var))
+            #println("constraint 3")
+            results[3] = false
+        end
+    catch error
+        #println("SymPy cannot evaluate Axiom 3")
+        #println(error)
+        results[3] = false
+    end
+
+    return results
 
 end

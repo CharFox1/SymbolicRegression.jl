@@ -1,58 +1,39 @@
-module MutateModule
-
-import ..CoreModule: Node, copy_node, Options, Dataset, RecordType
-import ..EquationUtilsModule: compute_complexity, count_constants, count_depth
-import ..LossFunctionsModule: score_func, score_func_batch
-import ..CheckConstraintsModule: check_constraints
-import ..PopMemberModule: PopMember
-import ..MutationFunctionsModule:
-    gen_random_tree_fixed_size,
-    mutate_constant,
-    mutate_operator,
-    append_random_op,
-    prepend_random_op,
-    insert_random_op,
-    delete_random_op,
-    crossover_trees
-import ..SimplifyEquationModule: simplify_tree, combine_operators
-import ..RecorderModule: @recorder
+using FromFile
+@from "Core.jl" import Node, copyNode, Options, Dataset, RecordType
+@from "EquationUtils.jl" import countNodes, countConstants, countDepth
+@from "LossFunctions.jl" import scoreFunc, scoreFuncBatch
+@from "CheckConstraints.jl" import check_constraints
+@from "PopMember.jl" import PopMember
+@from "MutationFunctions.jl" import genRandomTree, mutateConstant, mutateOperator, appendRandomOp, prependRandomOp, insertRandomOp, deleteRandomOp, crossoverTrees
+@from "SimplifyEquation.jl" import simplifyTree, combineOperators, simplifyWithSymbolicUtils
+@from "Recorder.jl" import @recorder
 
 # Go through one simulated options.annealing mutation cycle
 #  exp(-delta/T) defines probability of accepting a change
-function next_generation(
-    dataset::Dataset{T},
-    baseline::T,
-    member::PopMember,
-    temperature::T,
-    curmaxsize::Int,
-    frequencyComplexity::AbstractVector{T},
-    options::Options;
-    tmp_recorder::RecordType,
-)::Tuple{PopMember,Bool,Float64} where {T<:Real}
+function nextGeneration(dataset::Dataset{T},
+                        baseline::T, member::PopMember, temperature::T,
+                        curmaxsize::Int, frequencyComplexity::AbstractVector{T},
+                        options::Options; tmp_recorder::RecordType)::PopMember where {T<:Real}
+
     prev = member.tree
     parent_ref = member.ref
     tree = prev
-    mutation_accepted = false
-    num_evals = 0.0
-
     #TODO - reconsider this
     if options.batching
-        beforeScore, beforeLoss = score_func_batch(dataset, baseline, prev, options)
-        num_evals += (options.batchSize / dataset.n)
+        beforeLoss = scoreFuncBatch(dataset, baseline, prev, options)
     else
-        beforeScore = member.score
-        beforeLoss = member.loss
+        beforeLoss = member.score
     end
 
     nfeatures = dataset.nfeatures
 
     mutationChoice = rand()
     #More constants => more likely to do constant mutation
-    weightAdjustmentMutateConstant = min(8, count_constants(prev)) / 8.0
+    weightAdjustmentMutateConstant = min(8, countConstants(prev))/8.0
     cur_weights = copy(options.mutationWeights) .* 1.0
     cur_weights[1] *= weightAdjustmentMutateConstant
-    n = compute_complexity(prev, options)
-    depth = count_depth(prev)
+    n = countNodes(prev)
+    depth = countDepth(prev)
 
     # If equation too big, don't add new operators
     if n >= curmaxsize || depth >= options.maxdepth
@@ -67,22 +48,22 @@ function next_generation(
     is_success_always_possible = true
     attempts = 0
     max_attempts = 10
-
+    
     #############################################
     # Mutations
     #############################################
     while (!successful_mutation) && attempts < max_attempts
-        tree = copy_node(prev)
+        tree = copyNode(prev)
         successful_mutation = true
         if mutationChoice < cweights[1]
-            tree = mutate_constant(tree, temperature, options)
+            tree = mutateConstant(tree, temperature, options)
             @recorder tmp_recorder["type"] = "constant"
 
             is_success_always_possible = true
             # Mutating a constant shouldn't invalidate an already-valid function
 
         elseif mutationChoice < cweights[2]
-            tree = mutate_operator(tree, options)
+            tree = mutateOperator(tree, options)
 
             @recorder tmp_recorder["type"] = "operator"
 
@@ -91,49 +72,41 @@ function next_generation(
 
         elseif mutationChoice < cweights[3]
             if rand() < 0.5
-                tree = append_random_op(tree, options, nfeatures)
+                tree = appendRandomOp(tree, options, nfeatures)
                 @recorder tmp_recorder["type"] = "append_op"
             else
-                tree = prepend_random_op(tree, options, nfeatures)
+                tree = prependRandomOp(tree, options, nfeatures)
                 @recorder tmp_recorder["type"] = "prepend_op"
             end
             is_success_always_possible = false
             # Can potentially have a situation without success
         elseif mutationChoice < cweights[4]
-            tree = insert_random_op(tree, options, nfeatures)
+            tree = insertRandomOp(tree, options, nfeatures)
             @recorder tmp_recorder["type"] = "insert_op"
             is_success_always_possible = false
         elseif mutationChoice < cweights[5]
-            tree = delete_random_op(tree, options, nfeatures)
+            tree = deleteRandomOp(tree, options, nfeatures)
             @recorder tmp_recorder["type"] = "delete_op"
             is_success_always_possible = true
         elseif mutationChoice < cweights[6]
-            tree = simplify_tree(tree, options) # Sometimes we simplify tree
-            tree = combine_operators(tree, options) # See if repeated constants at outer levels
-            @recorder tmp_recorder["type"] = "partial_simplify"
-            mutation_accepted = true
-            return (
-                PopMember(
-                    tree,
-                    beforeScore,
-                    beforeLoss;
-                    parent=parent_ref,
-                    deterministic=options.deterministic,
-                ),
-                mutation_accepted,
-                num_evals,
-            )
+            tree = simplifyTree(tree, options) # Sometimes we simplify tree
+            tree = combineOperators(tree, options) # See if repeated constants at outer levels
+            # SymbolicUtils is quite slow, so only rarely
+            #  do we use it for simplification.
+            if rand() < 0.01 && options.use_symbolic_utils
+                tree = simplifyWithSymbolicUtils(tree, options, curmaxsize)
+                @recorder tmp_recorder["type"] = "full_simplify"
+            else
+                @recorder tmp_recorder["type"] = "partial_simplify"
+            end
+            return PopMember(tree, beforeLoss, parent=parent_ref)
 
             is_success_always_possible = true
             # Simplification shouldn't hurt complexity; unless some non-symmetric constraint
             # to commutative operator...
 
         elseif mutationChoice < cweights[7]
-            # Sometimes we generate a new tree completely tree
-            # We select a random size, though the generated tree
-            # may have fewer nodes than we request.
-            tree_size_to_generate = rand(1:curmaxsize)
-            tree = gen_random_tree_fixed_size(tree_size_to_generate, options, nfeatures)
+            tree = genRandomTree(5, options, nfeatures) # Sometimes we generate a new tree completely tree
             @recorder tmp_recorder["type"] = "regenerate"
 
             is_success_always_possible = true
@@ -143,22 +116,10 @@ function next_generation(
                 tmp_recorder["result"] = "accept"
                 tmp_recorder["reason"] = "identity"
             end
-            mutation_accepted = true
-            return (
-                PopMember(
-                    tree,
-                    beforeScore,
-                    beforeLoss;
-                    parent=parent_ref,
-                    deterministic=options.deterministic,
-                ),
-                mutation_accepted,
-                num_evals,
-            )
+            return PopMember(tree, beforeLoss, parent=parent_ref)
         end
 
-        successful_mutation =
-            successful_mutation && check_constraints(tree, options, curmaxsize)
+        successful_mutation = successful_mutation && check_constraints(tree, options, curmaxsize)
 
         attempts += 1
     end
@@ -169,58 +130,32 @@ function next_generation(
             tmp_recorder["result"] = "reject"
             tmp_recorder["reason"] = "failed_constraint_check"
         end
-        mutation_accepted = false
-        return (
-            PopMember(
-                copy_node(prev),
-                beforeScore,
-                beforeLoss;
-                parent=parent_ref,
-                deterministic=options.deterministic,
-            ),
-            mutation_accepted,
-            num_evals,
-        )
+        return PopMember(copyNode(prev), beforeLoss, parent=parent_ref)
     end
 
     if options.batching
-        afterScore, afterLoss = score_func_batch(dataset, baseline, tree, options)
-        num_evals += (options.batchSize / dataset.n)
+        afterLoss = scoreFuncBatch(dataset, baseline, tree, options)
     else
-        afterScore, afterLoss = score_func(dataset, baseline, tree, options)
-        num_evals += 1
+        afterLoss = scoreFunc(dataset, baseline, tree, options)
     end
 
-    if isnan(afterScore)
+    if isnan(afterLoss)
         @recorder begin
             tmp_recorder["result"] = "reject"
             tmp_recorder["reason"] = "nan_loss"
         end
-        mutation_accepted = false
-        return (
-            PopMember(
-                copy_node(prev),
-                beforeScore,
-                beforeLoss;
-                parent=parent_ref,
-                deterministic=options.deterministic,
-            ),
-            mutation_accepted,
-            num_evals,
-        )
+        return PopMember(copyNode(prev), beforeLoss, parent=parent_ref)
     end
 
     probChange = 1.0
     if options.annealing
-        delta = afterScore - beforeScore
-        probChange *= exp(-delta / (temperature * options.alpha))
+        delta = afterLoss - beforeLoss
+        probChange *= exp(-delta/(temperature*options.alpha))
     end
     if options.useFrequency
-        oldSize = compute_complexity(prev, options)
-        newSize = compute_complexity(tree, options)
-        old_frequency = (oldSize <= options.maxsize) ? frequencyComplexity[oldSize] : 1e-6
-        new_frequency = (newSize <= options.maxsize) ? frequencyComplexity[newSize] : 1e-6
-        probChange *= old_frequency / new_frequency
+        oldSize = countNodes(prev)
+        newSize = countNodes(tree)
+        probChange *= frequencyComplexity[oldSize] / frequencyComplexity[newSize]
     end
 
     if probChange < rand()
@@ -228,96 +163,48 @@ function next_generation(
             tmp_recorder["result"] = "reject"
             tmp_recorder["reason"] = "annealing_or_frequency"
         end
-        mutation_accepted = false
-        return (
-            PopMember(
-                copy_node(prev),
-                beforeScore,
-                beforeLoss;
-                parent=parent_ref,
-                deterministic=options.deterministic,
-            ),
-            mutation_accepted,
-            num_evals,
-        )
+        return PopMember(copyNode(prev), beforeLoss, parent=parent_ref)
     else
         @recorder begin
             tmp_recorder["result"] = "accept"
             tmp_recorder["reason"] = "pass"
         end
-        mutation_accepted = true
-        return (
-            PopMember(
-                tree,
-                afterScore,
-                afterLoss;
-                parent=parent_ref,
-                deterministic=options.deterministic,
-            ),
-            mutation_accepted,
-            num_evals,
-        )
+        return PopMember(tree, afterLoss, parent=parent_ref)
     end
 end
 
+
 """Generate a generation via crossover of two members."""
-function crossover_generation(
-    member1::PopMember,
-    member2::PopMember,
-    dataset::Dataset{T},
-    baseline::T,
-    curmaxsize::Int,
-    options::Options,
-)::Tuple{PopMember,PopMember,Bool,Float64} where {T<:Real}
+function crossoverGeneration(member1::PopMember, member2::PopMember, dataset::Dataset{T},
+                             baseline::T, curmaxsize::Int, options::Options)::Tuple{PopMember, PopMember} where {T<:Real}
     tree1 = member1.tree
     tree2 = member2.tree
-    crossover_accepted = false
 
     # We breed these until constraints are no longer violated:
-    child_tree1, child_tree2 = crossover_trees(tree1, tree2)
+    child_tree1, child_tree2 = crossoverTrees(tree1, tree2)
     num_tries = 1
     max_tries = 10
-    num_evals = 0.0
-    while true
+    while true 
         # Both trees satisfy constraints
-        if check_constraints(child_tree1, options, curmaxsize) &&
-            check_constraints(child_tree2, options, curmaxsize)
+        if check_constraints(child_tree1, options, curmaxsize) && check_constraints(child_tree2, options, curmaxsize)
             break
         end
         if num_tries > max_tries
-            crossover_accepted = false
-            return member1, member2, crossover_accepted, num_evals  # Fail.
+            return member1, member2  # Fail.
         end
-        child_tree1, child_tree2 = crossover_trees(tree1, tree2)
+        child_tree1, child_tree2 = crossoverTrees(tree1, tree2)
         num_tries += 1
     end
     if options.batching
-        afterScore1, afterLoss1 = score_func_batch(dataset, baseline, child_tree1, options)
-        afterScore2, afterLoss2 = score_func_batch(dataset, baseline, child_tree2, options)
-        num_evals += 2 * (options.batchSize / dataset.n)
+        afterLoss1 = scoreFuncBatch(dataset, baseline, child_tree1, options)
+        afterLoss2 = scoreFuncBatch(dataset, baseline, child_tree2, options)
     else
-        afterScore1, afterLoss1 = score_func(dataset, baseline, child_tree1, options)
-        afterScore2, afterLoss2 = score_func(dataset, baseline, child_tree2, options)
-        num_evals += options.batchSize / dataset.n
+        afterLoss1 = scoreFunc(dataset, baseline, child_tree1, options)
+        afterLoss2 = scoreFunc(dataset, baseline, child_tree2, options)
     end
 
-    baby1 = PopMember(
-        child_tree1,
-        afterScore1,
-        afterLoss1;
-        parent=member1.ref,
-        deterministic=options.deterministic,
-    )
-    baby2 = PopMember(
-        child_tree2,
-        afterScore2,
-        afterLoss2;
-        parent=member2.ref,
-        deterministic=options.deterministic,
-    )
+    baby1 = PopMember(child_tree1, afterLoss1, parent=member1.ref)
+    baby2 = PopMember(child_tree2, afterLoss2, parent=member2.ref)
 
-    crossover_accepted = true
-    return baby1, baby2, crossover_accepted, num_evals
-end
-
+    return baby1, baby2
 end

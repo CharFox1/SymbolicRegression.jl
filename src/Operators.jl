@@ -1,6 +1,4 @@
-module OperatorsModule
-
-using SpecialFunctions: SpecialFunctions
+import SpecialFunctions
 import SpecialFunctions: erf, erfc
 #TODO - actually add these operators to the module!
 
@@ -13,7 +11,7 @@ function gamma(x::T)::T where {T<:Real}
 end
 gamma(x) = SpecialFunctions.gamma(x)
 
-atanh_clip(x) = atanh(mod(x + 1, 2) - 1)
+atanh_clip(x) = atanh(mod(x+1, 2) - 1)
 
 # Implicitly defined:
 #binary: mod
@@ -22,40 +20,40 @@ atanh_clip(x) = atanh(mod(x + 1, 2) - 1)
 # Use some fast operators from https://github.com/JuliaLang/julia/blob/81597635c4ad1e8c2e1c5753fda4ec0e7397543f/base/fastmath.jl
 # Define allowed operators. Any julia operator can also be used.
 function plus(x::T, y::T)::T where {T<:Real}
-    return x + y #Do not change the name of this operator.
+	x + y #Do not change the name of this operator.
 end
 function sub(x::T, y::T)::T where {T<:Real}
-    return x - y #Do not change the name of this operator.
+	x - y #Do not change the name of this operator.
 end
 function mult(x::T, y::T)::T where {T<:Real}
-    return x * y #Do not change the name of this operator.
+	x * y #Do not change the name of this operator.
 end
 function square(x::T)::T where {T<:Real}
-    return x * x
+	x * x
 end
 function cube(x::T)::T where {T<:Real}
-    return x^3
+	x ^ 3
 end
 function pow(x::T, y::T)::T where {T<:Real}
-    return abs(x)^y
+	abs(x)^y
 end
 function div(x::T, y::T)::T where {T<:Real}
-    return x / y
+	x / y
 end
 function log_abs(x::T)::T where {T<:Real}
-    return log(abs(x) + convert(T, 1//100000000))
+    log(abs(x) + convert(T, 1//100000000))
 end
 function log2_abs(x::T)::T where {T<:Real}
-    return log2(abs(x) + convert(T, 1//100000000))
+    log2(abs(x) + convert(T, 1//100000000))
 end
 function log10_abs(x::T)::T where {T<:Real}
-    return log10(abs(x) + convert(T, 1//100000000))
+    log10(abs(x) + convert(T, 1//100000000))
 end
 function log1p_abs(x::T)::T where {T<:Real}
-    return log(abs(x) + convert(T, 1))
+    log(abs(x) + convert(T, 1))
 end
 function acosh_abs(x::T)::T where {T<:Real}
-    return acosh(abs(x) + convert(T, 1))
+    acosh(abs(x) + convert(T, 1))
 end
 
 # Generics:
@@ -73,10 +71,10 @@ log1p_abs(x) = log(abs(x) + 1)
 acosh_abs(x) = acosh(abs(x) + 1)
 
 function sqrt_abs(x::T)::T where {T}
-    return sqrt(abs(x))
+	sqrt(abs(x))
 end
 function neg(x::T)::T where {T}
-    return -x
+	- x
 end
 
 function greater(x::T, y::T)::T where {T}
@@ -96,6 +94,4 @@ end
 # (Just use multiplication normally)
 function logical_and(x::T, y::T)::T where {T}
     return convert(T, (x > convert(T, 0) && y > convert(T, 0)))
-end
-
 end
