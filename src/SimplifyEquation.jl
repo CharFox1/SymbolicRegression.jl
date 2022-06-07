@@ -24,7 +24,9 @@ function combineOperators(tree::Node, options::Options)::Node
     end
 
     top_level_constant = tree.degree == 2 && (tree.l.constant || tree.r.constant)
-    if tree.degree == 2 && (options.binops[tree.op] == (*) || options.binops[tree.op] == (+)) && top_level_constant
+    if tree.degree == 2 &&
+        (options.binops[tree.op] == (*) || options.binops[tree.op] == (+)) &&
+        top_level_constant
         op = tree.op
         # Put the constant in r. Need to assume var in left for simplification assumption.
         if tree.l.constant
@@ -108,8 +110,7 @@ function simplifyTree(tree::Node, options::Options)::Node
         tree.l = simplifyTree(tree.l, options)
         tree.r = simplifyTree(tree.r, options)
         constantsBelow = (
-             tree.l.degree == 0 && tree.l.constant &&
-             tree.r.degree == 0 && tree.r.constant
+            tree.l.degree == 0 && tree.l.constant && tree.r.degree == 0 && tree.r.constant
         )
         if constantsBelow
             # NaN checks:
@@ -130,7 +131,6 @@ function simplifyTree(tree::Node, options::Options)::Node
     return tree
 end
 
-
 # Expensive but powerful simplify using SymbolicUtils
 function simplifyWithSymbolicUtils(tree::Node, options::Options, curmaxsize::Int)::Node
     if !(((+) in options.binops) && ((*) in options.binops))
@@ -138,7 +138,9 @@ function simplifyWithSymbolicUtils(tree::Node, options::Options, curmaxsize::Int
     end
     init_node = copyNode(tree)
     init_size = countNodes(tree)
-    symbolic_util_form, complete = node_to_symbolic_safe(tree, options, index_functions=true)
+    symbolic_util_form, complete = node_to_symbolic_safe(
+        tree, options; index_functions=true
+    )
     if !complete
         return init_node
     end
@@ -148,12 +150,13 @@ function simplifyWithSymbolicUtils(tree::Node, options::Options, curmaxsize::Int
     end
     final_node = symbolic_to_node(eqn_form, options)
     final_size = countNodes(tree)
-    did_simplification_improve = (final_size <= init_size) && (check_constraints(final_node, options, curmaxsize))
+    did_simplification_improve =
+        (final_size <= init_size) && (check_constraints(final_node, options, curmaxsize))
     output = did_simplification_improve ? final_node : init_node
 
     return output
 end
 
 function simplifyWithSymbolicUtils(tree::Node, options::Options)::Node
-    simplifyWithSymbolicUtils(tree, options, options.maxsize)
+    return simplifyWithSymbolicUtils(tree, options, options.maxsize)
 end

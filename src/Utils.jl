@@ -16,29 +16,28 @@ function debug_inline(verbosity, string...)
 end
 
 function getTime()::Int
-    return round(Int, 1e3*(time()-1.6e9))
+    return round(Int, 1e3 * (time() - 1.6e9))
 end
-
 
 function check_numeric(n)
     return tryparse(Float64, n) !== nothing
 end
 
 function is_anonymous_function(op)
-	op_string = string(nameof(op))
-	return length(op_string) > 1 && op_string[1] == '#' && check_numeric(op_string[2:2])
+    op_string = string(nameof(op))
+    return length(op_string) > 1 && op_string[1] == '#' && check_numeric(op_string[2:2])
 end
 
 function recursive_merge(x::AbstractVector...)
-    cat(x...; dims=1)
+    return cat(x...; dims=1)
 end
 
 function recursive_merge(x::AbstractDict...)
-    merge(recursive_merge, x...)
+    return merge(recursive_merge, x...)
 end
 
 function recursive_merge(x...)
-    x[end]
+    return x[end]
 end
 
 isgood(x::T) where {T<:Number} = !(isnan(x) || !isfinite(x))
@@ -46,27 +45,26 @@ isgood(x) = true
 isbad(x) = !isgood(x)
 
 macro return_on_false(flag, retval)
-    :(if !$(esc(flag))
-          return ($(esc(retval)), false)
-    end)
+    :(
+        if !$(esc(flag))
+            return ($(esc(retval)), false)
+        end
+    )
 end
 
-function next_worker(worker_assignment::Dict{Tuple{Int,Int}, Int}, procs::Vector{Int})::Int
-    job_counts = Dict(proc=>0 for proc in procs)
+function next_worker(worker_assignment::Dict{Tuple{Int,Int},Int}, procs::Vector{Int})::Int
+    job_counts = Dict(proc => 0 for proc in procs)
     for (key, value) in worker_assignment
         @assert haskey(job_counts, value)
         job_counts[value] += 1
     end
     least_busy_worker = reduce(
-        (proc1, proc2) -> (
-            job_counts[proc1] <= job_counts[proc2] ? proc1 : proc2
-        ),
-        procs
+        (proc1, proc2) -> (job_counts[proc1] <= job_counts[proc2] ? proc1 : proc2), procs
     )
     return least_busy_worker
 end
 
-function next_worker(worker_assignment::Dict{Tuple{Int,Int}, Int}, procs::Nothing)::Int
+function next_worker(worker_assignment::Dict{Tuple{Int,Int},Int}, procs::Nothing)::Int
     return 0
 end
 

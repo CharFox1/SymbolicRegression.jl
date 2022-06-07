@@ -17,7 +17,7 @@ function randomNode(tree::Node)::Node
         c = countNodes(tree.r)
     end
 
-    i = rand(1:1+b+c)
+    i = rand(1:(1 + b + c))
     if i <= b
         return randomNode(tree.l)
     elseif i == b + 1
@@ -38,17 +38,15 @@ function mutateOperator(tree::Node, options::Options)::Node
         node = randomNode(tree)
     end
     if node.degree == 1
-        node.op = rand(1:options.nuna)
+        node.op = rand(1:(options.nuna))
     else
-        node.op = rand(1:options.nbin)
+        node.op = rand(1:(options.nbin))
     end
     return tree
 end
 
 # Randomly perturb a constant
-function mutateConstant(
-        tree::Node, temperature::T,
-        options::Options)::Node where {T<:Real}
+function mutateConstant(tree::Node, temperature::T, options::Options)::Node where {T<:Real}
     # T is between 0 and 1.
 
     if countConstants(tree) == 0
@@ -84,21 +82,15 @@ function appendRandomOp(tree::Node, options::Options, nfeatures::Int)::Node
         node = randomNode(tree)
     end
 
-
     choice = rand()
-    makeNewBinOp = choice < options.nbin/(options.nuna + options.nbin)
+    makeNewBinOp = choice < options.nbin / (options.nuna + options.nbin)
 
     if makeNewBinOp
         newnode = Node(
-            rand(1:options.nbin),
-            makeRandomLeaf(nfeatures),
-            makeRandomLeaf(nfeatures)
+            rand(1:(options.nbin)), makeRandomLeaf(nfeatures), makeRandomLeaf(nfeatures)
         )
     else
-        newnode = Node(
-            rand(1:options.nuna),
-            makeRandomLeaf(nfeatures)
-        )
+        newnode = Node(rand(1:(options.nuna)), makeRandomLeaf(nfeatures))
     end
 
     if newnode.degree == 2
@@ -118,21 +110,14 @@ end
 function insertRandomOp(tree::Node, options::Options, nfeatures::Int)::Node
     node = randomNode(tree)
     choice = rand()
-    makeNewBinOp = choice < options.nbin/(options.nuna + options.nbin)
+    makeNewBinOp = choice < options.nbin / (options.nuna + options.nbin)
     left = copyNode(node)
 
     if makeNewBinOp
         right = makeRandomLeaf(nfeatures)
-        newnode = Node(
-            rand(1:options.nbin),
-            left,
-            right
-        )
+        newnode = Node(rand(1:(options.nbin)), left, right)
     else
-        newnode = Node(
-            rand(1:options.nuna),
-            left
-        )
+        newnode = Node(rand(1:(options.nuna)), left)
     end
     if newnode.degree == 2
         node.r = newnode.r
@@ -150,21 +135,14 @@ end
 function prependRandomOp(tree::Node, options::Options, nfeatures::Int)::Node
     node = tree
     choice = rand()
-    makeNewBinOp = choice < options.nbin/(options.nuna + options.nbin)
+    makeNewBinOp = choice < options.nbin / (options.nuna + options.nbin)
     left = copyNode(tree)
 
     if makeNewBinOp
         right = makeRandomLeaf(nfeatures)
-        newnode = Node(
-            rand(1:options.nbin),
-            left,
-            right
-        )
+        newnode = Node(rand(1:(options.nbin)), left, right)
     else
-        newnode = Node(
-            rand(1:options.nuna),
-            left
-        )
+        newnode = Node(rand(1:(options.nuna)), left)
     end
     if newnode.degree == 2
         node.r = newnode.r
@@ -186,9 +164,10 @@ function makeRandomLeaf(nfeatures::Int)::Node
     end
 end
 
-
 # Return a random node from the tree with parent, and side ('n' for no parent)
-function randomNodeAndParent(tree::Node, parent::Union{Node, Nothing}; side::Char)::Tuple{Node, Union{Node, Nothing}, Char}
+function randomNodeAndParent(
+    tree::Node, parent::Union{Node,Nothing}; side::Char
+)::Tuple{Node,Union{Node,Nothing},Char}
     if tree.degree == 0
         return tree, parent, side
     end
@@ -202,7 +181,7 @@ function randomNodeAndParent(tree::Node, parent::Union{Node, Nothing}; side::Cha
         c = countNodes(tree.r)
     end
 
-    i = rand(1:1+b+c)
+    i = rand(1:(1 + b + c))
     if i <= b
         return randomNodeAndParent(tree.l, tree; side='l')
     elseif i == b + 1
@@ -212,7 +191,7 @@ function randomNodeAndParent(tree::Node, parent::Union{Node, Nothing}; side::Cha
     return randomNodeAndParent(tree.r, tree; side='r')
 end
 
-function randomNodeAndParent(tree::Node)::Tuple{Node, Union{Node, Nothing}, Char}
+function randomNodeAndParent(tree::Node)::Tuple{Node,Union{Node,Nothing},Char}
     return randomNodeAndParent(tree, nothing; side='n')
 end
 
@@ -266,7 +245,7 @@ end
 # Create a random equation by appending random operators
 function genRandomTree(length::Int, options::Options, nfeatures::Int)::Node
     tree = Node(convert(CONST_TYPE, 1))
-    for i=1:length
+    for i in 1:length
         # TODO: This can be larger number of nodes than length.
         tree = appendRandomOp(tree, options, nfeatures)
     end
@@ -282,7 +261,7 @@ function genRandomTreeFixedSize(node_count::Int, options::Options, nfeatures::In
 end
 
 """Crossover between two expressions"""
-function crossoverTrees(tree1::Node, tree2::Node)::Tuple{Node, Node}
+function crossoverTrees(tree1::Node, tree2::Node)::Tuple{Node,Node}
     tree1 = copyNode(tree1)
     tree2 = copyNode(tree2)
 

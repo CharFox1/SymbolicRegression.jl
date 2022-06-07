@@ -2,11 +2,10 @@ using LossFunctions
 using PyCall
 
 struct Options{A,B,C<:Union{SupervisedLoss,Function}}
-
     binops::A
     unaops::B
-    bin_constraints::Array{Tuple{Int,Int}, 1}
-    una_constraints::Array{Int, 1}
+    bin_constraints::Array{Tuple{Int,Int},1}
+    una_constraints::Array{Int,1}
     ns::Int
     parsimony::Float32
     alpha::Float32
@@ -23,7 +22,7 @@ struct Options{A,B,C<:Union{SupervisedLoss,Function}}
     annealing::Bool
     batching::Bool
     batchSize::Int
-    mutationWeights::Array{Float64, 1}
+    mutationWeights::Array{Float64,1}
     crossoverProbability::Float32
     warmupMaxsizeBy::Float32
     useFrequency::Bool
@@ -35,10 +34,10 @@ struct Options{A,B,C<:Union{SupervisedLoss,Function}}
     probNegate::Float32
     nuna::Int
     nbin::Int
-    seed::Union{Int, Nothing}
+    seed::Union{Int,Nothing}
     loss::C
     progress::Bool
-    terminal_width::Union{Int, Nothing}
+    terminal_width::Union{Int,Nothing}
     optimizer_algorithm::String
     optimize_probability::Float32
     optimizer_nrestarts::Int
@@ -46,12 +45,12 @@ struct Options{A,B,C<:Union{SupervisedLoss,Function}}
     recorder::Bool
     recorder_file::String
     probPickFirst::Float32
-    earlyStopCondition::Union{Function, Nothing}
+    earlyStopCondition::Union{Function,Nothing}
     stateReturn::Bool
     use_symbolic_utils::Bool
-    timeout_in_seconds::Union{Float64, Nothing}
+    timeout_in_seconds::Union{Float64,Nothing}
     #sym_constraints::D
-    penalties::Union{Array{Float32}, Nothing}
+    penalties::Union{Array{Float32},Nothing}
     #pyLibs::Dict{String, PyObject}
 
 end
