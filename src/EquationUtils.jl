@@ -27,7 +27,6 @@ function countDepth(tree::Node)::Int
     end
 end
 
-
 # Count the number of unary operators in the equation
 function countUnaryOperators(tree::Node)::Int
     if tree.degree == 0
@@ -55,7 +54,6 @@ function countOperators(tree::Node)::Int
     return countUnaryOperators(tree) + countBinaryOperators(tree)
 end
 
-
 # Count the number of constants in an equation
 function countConstants(tree::Node)::Int
     if tree.degree == 0
@@ -70,7 +68,6 @@ function countConstants(tree::Node)::Int
         return 0 + countConstants(tree.l) + countConstants(tree.r)
     end
 end
-
 
 # Get all the constants from a tree
 function getConstants(tree::Node)::AbstractVector{CONST_TYPE}
@@ -99,7 +96,7 @@ function setConstants(tree::Node, constants::AbstractVector{T}) where {T<:Real}
     else
         numberLeft = countConstants(tree.l)
         setConstants(tree.l, constants)
-        setConstants(tree.r, constants[numberLeft+1:end])
+        setConstants(tree.r, constants[(numberLeft + 1):end])
     end
 end
 
@@ -144,7 +141,6 @@ function thermoConstraints(expr::PyObject, var::PyObject)
     #println("expression:", expr)
     results = [true, true, true]
 
-    
     # Axiom 1: the expr needs to pass through the origin
     try
         if sympy.limit(expr, var, 0, "+") != 0
@@ -158,9 +154,11 @@ function thermoConstraints(expr::PyObject, var::PyObject)
     end
     # Axiom 2: the expr needs to converge to Henry's Law at zero pressure
     try
-        if (sympy.limit(sympy.diff(expr, var), var, 0) == sympy.oo 
-            || sympy.limit(sympy.diff(expr, var), var, 0) == -sympy.oo 
-            || sympy.limit(sympy.diff(expr, var), var, 0) == 0)
+        if (
+            sympy.limit(sympy.diff(expr, var), var, 0) == sympy.oo ||
+            sympy.limit(sympy.diff(expr, var), var, 0) == -sympy.oo ||
+            sympy.limit(sympy.diff(expr, var), var, 0) == 0
+        )
             #println("constraint 2")
             results[2] = false
         end
@@ -173,7 +171,7 @@ function thermoConstraints(expr::PyObject, var::PyObject)
     # Axiom 3: the expr must be strictly increasing as pressure increases
     try
         # use custom function because sympy doesn't work as expected
-        if !(py"is_monotonic_increasing"(expr, sympy.Interval(0,sympy.oo), var))
+        if !(py"is_monotonic_increasing"(expr, sympy.Interval(0, sympy.oo), var))
             #println("constraint 3")
             results[3] = false
         end
@@ -184,5 +182,4 @@ function thermoConstraints(expr::PyObject, var::PyObject)
     end
 
     return results
-
 end
