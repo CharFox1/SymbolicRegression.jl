@@ -149,6 +149,7 @@ function thermoConstraints(expr::PyObject, var::PyObject)
         #println(error)
         #println("SymPy cannot evaluate Axiom 1")
         results[1] = False
+    end
     # Axiom 2: the expr needs to converge to Henry's Law at zero pressure
     try
         if (sympy.limit(sympy.diff(expr, var), var, 0) == sympy.oo 
@@ -161,7 +162,7 @@ function thermoConstraints(expr::PyObject, var::PyObject)
         #println(error)
         #println("SymPy cannot evaluate Axiom 2")
         results[2] = False
-
+    end
     # Axiom 3: the expr must be strictly increasing as pressure increases
     try
         # use custom function because sympy doesn't work as expected
@@ -173,5 +174,6 @@ function thermoConstraints(expr::PyObject, var::PyObject)
         #print("SymPy cannot evaluate Axiom 3")
         print("Oops!", sys.exc_info()[0], "occurred for", expr)
         results[3] = False
-
+    end
     return results
+ end
