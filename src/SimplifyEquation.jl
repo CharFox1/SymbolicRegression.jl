@@ -1,14 +1,12 @@
-using FromFile
-@from "Core.jl" import CONST_TYPE, Node, copyNode, Options
-@from "EquationUtils.jl" import countNodes
-@from "CustomSymbolicUtilsSimplification.jl" import custom_simplify
-@from "InterfaceSymbolicUtils.jl" import node_to_symbolic_safe, symbolic_to_node
-@from "CheckConstraints.jl" import check_constraints
-@from "Utils.jl" import isbad, isgood
+module SimplifyEquationModule
+
+import ..CoreModule: CONST_TYPE, Node, copy_node, Options
+import ..CheckConstraintsModule: check_constraints
+import ..UtilsModule: isbad, isgood
 
 # Simplify tree
-function combineOperators(tree::Node, options::Options)::Node
-    # NOTE: (const (+*-) const) already accounted for. Call simplifyTree before.
+function combine_operators(tree::Node, options::Options)::Node
+    # NOTE: (const (+*-) const) already accounted for. Call simplify_tree before.
     # ((const + var) + const) => (const + var)
     # ((const * var) * const) => (const * var)
     # ((const - var) - const) => (const - var)
@@ -17,14 +15,16 @@ function combineOperators(tree::Node, options::Options)::Node
     if tree.degree == 0
         return tree
     elseif tree.degree == 1
-        tree.l = combineOperators(tree.l, options)
+        tree.l = combine_operators(tree.l, options)
     elseif tree.degree == 2
-        tree.l = combineOperators(tree.l, options)
-        tree.r = combineOperators(tree.r, options)
+        tree.l = combine_operators(tree.l, options)
+        tree.r = combine_operators(tree.r, options)
     end
 
     top_level_constant = tree.degree == 2 && (tree.l.constant || tree.r.constant)
-    if tree.degree == 2 && (options.binops[tree.op] == (*) || options.binops[tree.op] == (+)) && top_level_constant
+    if tree.degree == 2 &&
+        (options.binops[tree.op] == (*) || options.binops[tree.op] == (+)) &&
+        top_level_constant
         op = tree.op
         # Put the constant in r. Need to assume var in left for simplification assumption.
         if tree.l.constant
@@ -93,9 +93,9 @@ function combineOperators(tree::Node, options::Options)::Node
 end
 
 # Simplify tree
-function simplifyTree(tree::Node, options::Options)::Node
+function simplify_tree(tree::Node, options::Options)::Node
     if tree.degree == 1
-        tree.l = simplifyTree(tree.l, options)
+        tree.l = simplify_tree(tree.l, options)
         l = tree.l.val
         if tree.l.degree == 0 && tree.l.constant && isgood(l)
             out = options.unaops[tree.op](l)
@@ -105,11 +105,10 @@ function simplifyTree(tree::Node, options::Options)::Node
             return Node(convert(CONST_TYPE, out))
         end
     elseif tree.degree == 2
-        tree.l = simplifyTree(tree.l, options)
-        tree.r = simplifyTree(tree.r, options)
+        tree.l = simplify_tree(tree.l, options)
+        tree.r = simplify_tree(tree.r, options)
         constantsBelow = (
-             tree.l.degree == 0 && tree.l.constant &&
-             tree.r.degree == 0 && tree.r.constant
+            tree.l.degree == 0 && tree.l.constant && tree.r.degree == 0 && tree.r.constant
         )
         if constantsBelow
             # NaN checks:
@@ -130,30 +129,4 @@ function simplifyTree(tree::Node, options::Options)::Node
     return tree
 end
 
-
-# Expensive but powerful simplify using SymbolicUtils
-function simplifyWithSymbolicUtils(tree::Node, options::Options, curmaxsize::Int)::Node
-    if !(((+) in options.binops) && ((*) in options.binops))
-        return tree
-    end
-    init_node = copyNode(tree)
-    init_size = countNodes(tree)
-    symbolic_util_form, complete = node_to_symbolic_safe(tree, options, index_functions=true)
-    if !complete
-        return init_node
-    end
-    eqn_form, complete2 = custom_simplify(symbolic_util_form, options)
-    if !complete2
-        return init_node
-    end
-    final_node = symbolic_to_node(eqn_form, options)
-    final_size = countNodes(tree)
-    did_simplification_improve = (final_size <= init_size) && (check_constraints(final_node, options, curmaxsize))
-    output = did_simplification_improve ? final_node : init_node
-
-    return output
-end
-
-function simplifyWithSymbolicUtils(tree::Node, options::Options)::Node
-    simplifyWithSymbolicUtils(tree, options, options.maxsize)
 end

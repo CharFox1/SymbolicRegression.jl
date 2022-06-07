@@ -1,12 +1,14 @@
-using FromFile
-@from "Core.jl" import Options, Dataset, Node, copyNode
-@from "Utils.jl" import getTime
-@from "LossFunctions.jl" import scoreFunc
+module PopMemberModule
+
+import ..CoreModule: Options, Dataset, Node, copy_node
+import ..UtilsModule: get_birth_order
+import ..LossFunctionsModule: score_func
 
 # Define a member of population by equation, score, and age
 mutable struct PopMember{T<:Real}
     tree::Node
-    score::T
+    score::T  # Inludes complexity penalty, normalization
+    loss::T  # Raw loss
     birth::Int
 
     # For recording history:
@@ -14,21 +16,28 @@ mutable struct PopMember{T<:Real}
     parent::Int
 end
 
+generate_reference() = abs(rand(Int))
+
 """
-    PopMember(t::Node, score::T)
+    PopMember(t::Node, score::T, loss::T)
 
 Create a population member with a birth date at the current time.
 
 # Arguments
 
 - `t::Node`: The tree for the population member.
-- `score::T`: The loss to assign this member.
+- `score::T`: The score (normalized to a baseline, and offset by a complexity penalty)
+- `loss::T`: The raw loss to assign.
 """
-function PopMember(t::Node, score::T; ref::Int=-1, parent::Int=-1) where {T<:Real}
+function PopMember(
+    t::Node, score::T, loss::T; ref::Int=-1, parent::Int=-1, deterministic=false
+) where {T<:Real}
     if ref == -1
-        ref = abs(rand(Int))
+        ref = generate_reference()
     end
-    PopMember{T}(t, score, getTime(), ref, parent)
+    return PopMember{T}(
+        t, score, loss, get_birth_order(; deterministic=deterministic), ref, parent
+    )
 end
 
 """
@@ -45,17 +54,27 @@ Automatically compute the score for this tree.
 - `t::Node`: The tree for the population member.
 - `options::Options`: What options to use.
 """
-function PopMember(dataset::Dataset{T},
-                   baseline::T, t::Node,
-                   options::Options; ref::Int=-1, parent::Int=-1) where {T<:Real}
-    PopMember(t, scoreFunc(dataset, baseline, t, options), ref=ref, parent=parent)
+function PopMember(
+    dataset::Dataset{T},
+    baseline::T,
+    t::Node,
+    options::Options;
+    ref::Int=-1,
+    parent::Int=-1,
+    deterministic=nothing,
+) where {T<:Real}
+    score, loss = score_func(dataset, baseline, t, options)
+    return PopMember(t, score, loss; ref=ref, parent=parent, deterministic=deterministic)
 end
 
-function copyPopMember(p::PopMember{T}) where {T<:Real}
-    tree = copyNode(p.tree)
+function copy_pop_member(p::PopMember{T}) where {T<:Real}
+    tree = copy_node(p.tree)
     score = copy(p.score)
+    loss = copy(p.loss)
     birth = copy(p.birth)
     ref = copy(p.ref)
     parent = copy(p.parent)
-    return PopMember{T}(tree, score, birth, ref, parent)
+    return PopMember{T}(tree, score, loss, birth, ref, parent)
+end
+
 end

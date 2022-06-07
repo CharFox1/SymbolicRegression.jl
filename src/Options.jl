@@ -1,13 +1,26 @@
-using FromFile
-using Distributed
-using LossFunctions
-using PyCall
+module OptionsModule
+
+import Distributed: nworkers
+import LossFunctions: L2DistLoss
+import Zygote: gradient
 #TODO - eventually move some of these
 # into the SR call itself, rather than
 # passing huge options at once.
-@from "Operators.jl" import plus, pow, mult, sub, div, log_abs, log10_abs, log2_abs, log1p_abs, sqrt_abs, acosh_abs, atanh_clip
-@from "Equation.jl" import Node, stringTree
-@from "OptionsStruct.jl" import Options
+import ..OperatorsModule:
+    plus,
+    pow,
+    mult,
+    sub,
+    div,
+    log_abs,
+    log10_abs,
+    log2_abs,
+    log1p_abs,
+    sqrt_abs,
+    acosh_abs,
+    atanh_clip
+import ..EquationModule: Node, string_tree
+import ..OptionsStructModule: Options, ComplexityMapping
 
 """
          build_constraints(una_constraints, bin_constraints,
@@ -15,9 +28,9 @@ using PyCall
 
 Build constraints on operator-level complexity from a user-passed dict.
 """
-function build_constraints(una_constraints, bin_constraints,
-                           unary_operators, binary_operators,
-                           nuna, nbin)::Tuple{Array{Int, 1}, Array{Tuple{Int,Int}, 1}}
+function build_constraints(
+    una_constraints, bin_constraints, unary_operators, binary_operators, nuna, nbin
+)::Tuple{Array{Int,1},Array{Tuple{Int,Int},1}}
     # Expect format ((*)=>(-1, 3)), etc.
     # TODO: Need to disable simplification if (*, -, +, /) are constrained?
     #  Or, just quit simplification is constraints violated.
@@ -33,7 +46,7 @@ function build_constraints(una_constraints, bin_constraints,
     end
 
     if una_constraints === nothing
-        una_constraints = [-1 for i=1:nuna]
+        una_constraints = [-1 for i in 1:nuna]
     elseif !is_una_constraints_already_done
         una_constraints::Dict
         _una_constraints = Int[]
@@ -49,7 +62,7 @@ function build_constraints(una_constraints, bin_constraints,
         una_constraints = _una_constraints
     end
     if bin_constraints === nothing
-        bin_constraints = [(-1, -1) for i=1:nbin]
+        bin_constraints = [(-1, -1) for i in 1:nbin]
     elseif !is_bin_constraints_already_done
         bin_constraints::Dict
         _bin_constraints = Tuple{Int,Int}[]
@@ -102,14 +115,15 @@ function unaopmap(op)
     return op
 end
 
-
 """
     Options(;kws...)
 
 Construct options for `EquationSearch` and other functions.
+The current arguments have been tuned using the median values from
+https://github.com/MilesCranmer/PySR/discussions/115.
 
 # Arguments
-- `binary_operators=(div, plus, mult)`: Tuple of binary
+- `binary_operators`: Tuple of binary
     operators to use. Each operator should be defined for two input scalars,
     and one output scalar. All operators need to be defined over the entire
     real line (excluding infinity - these are stopped before they are input).
@@ -118,9 +132,9 @@ Construct options for `EquationSearch` and other functions.
     of the same type as input, and outputs the same type. For the SymbolicUtils
     simplification backend, you will need to define a generic method of the
     operator so it takes arbitrary types.
-- `unary_operators=(exp, cos)`: Same, but for
+- `unary_operators`: Same, but for
     unary operators (one input scalar, gives an output scalar).
-- `constraints=nothing`: Array of pairs specifying size constraints
+- `constraints`: Array of pairs specifying size constraints
     for each operator. The constraints for a binary operator should be a 2-tuple
     (e.g., `(-1, -1)`) and the constraints for a unary operator should be an `Int`.
     A size constraint is a limit to the size of the subtree
@@ -128,10 +142,10 @@ Construct options for `EquationSearch` and other functions.
     `^` operator can have arbitrary size (`-1`) in its left argument,
     but a maximum size of `3` in its right argument. Default is
     no constraints.
-- `batching=false`: Whether to evolve based on small mini-batches of data,
+- `batching`: Whether to evolve based on small mini-batches of data,
     rather than the entire dataset.
-- `batchSize=50`: What batch size to use if using batching.
-- `loss=L2DistLoss()`: What loss function to use. Can be one of
+- `batchSize`: What batch size to use if using batching.
+- `loss`: What loss function to use. Can be one of
     the following losses, or any other loss of type
     `SupervisedLoss`. You can also pass a function that takes
     a scalar target (left argument), and scalar predicted (right
@@ -159,123 +173,152 @@ Construct options for `EquationSearch` and other functions.
             - `ExpLoss()`,
             - `SigmoidLoss()`,
             - `DWDMarginLoss(q)`.
-- `npopulations=nothing`: How many populations of equations to use. By default
+- `npopulations`: How many populations of equations to use. By default
     this is set equal to the number of cores
-- `npop=1000`: How many equations in each population.
-- `ncyclesperiteration=300`: How many generations to consider per iteration.
-- `ns=10`: Number of equations in each subsample during regularized evolution.
-- `topn=10`: Number of equations to return to the host process, and to
+- `npop`: How many equations in each population.
+- `ncyclesperiteration`: How many generations to consider per iteration.
+- `ns`: Number of equations in each subsample during regularized evolution.
+- `topn`: Number of equations to return to the host process, and to
     consider for the hall of fame.
-- `alpha=0.100000f0`: The probability of accepting an equation mutation
+- `complexity_of_operators`: What complexity should be assigned to each operator,
+    and the occurrence of a constant or variable. By default, this is 1
+    for all operators. Can be a real number as well, in which case
+    the complexity of an expression will be rounded to the nearest integer.
+    Input this in the form of, e.g., [(^) => 3, sin => 2].
+- `complexity_of_constants`: What complexity should be assigned to use of a constant.
+    By default, this is 1.
+- `complexity_of_variables`: What complexity should be assigned to each variable.
+    By default, this is 1.
+- `alpha`: The probability of accepting an equation mutation
     during regularized evolution is given by exp(-delta_loss/(alpha * T)),
     where T goes from 1 to 0. Thus, alpha=infinite is the same as no annealing.
-- `maxsize=20`: Maximum size of equations during the search.
-- `maxdepth=nothing`: Maximum depth of equations during the search, by default
+- `maxsize`: Maximum size of equations during the search.
+- `maxdepth`: Maximum depth of equations during the search, by default
     this is set equal to the maxsize.
-- `parsimony=0.000100f0`: A multiplicative factor for how much complexity is
+- `parsimony`: A multiplicative factor for how much complexity is
     punished.
-- `useFrequency=false`: Whether to use a parsimony that adapts to the
+- `useFrequency`: Whether to use a parsimony that adapts to the
     relative proportion of equations at each complexity; this will
     ensure that there are a balanced number of equations considered
     for every complexity.
-- `fast_cycle=false`: Whether to thread over subsamples of equations during
+- `useFrequencyInTournament`: Whether to use the adaptive parsimony described
+    above inside the score, rather than just at the mutation accept/reject stage.
+- `fast_cycle`: Whether to thread over subsamples of equations during
     regularized evolution. Slightly improves performance, but is a different
     algorithm.
-- `migration=true`: Whether to migrate equations between processes.
-- `hofMigration=true`: Whether to migrate equations from the hall of fame
+- `migration`: Whether to migrate equations between processes.
+- `hofMigration`: Whether to migrate equations from the hall of fame
     to processes.
-- `fractionReplaced=0.1f0`: What fraction of each population to replace with
+- `fractionReplaced`: What fraction of each population to replace with
     migrated equations at the end of each cycle.
-- `fractionReplacedHof=0.1f0`: What fraction to replace with hall of fame
+- `fractionReplacedHof`: What fraction to replace with hall of fame
     equations at the end of each cycle.
-- `shouldOptimizeConstants=true`: Whether to use NelderMead optimization
+- `shouldOptimizeConstants`: Whether to use NelderMead optimization
     to periodically optimize constants in equations.
-- `optimizer_nrestarts=3`: How many different random starting positions to consider
+- `optimizer_nrestarts`: How many different random starting positions to consider
     when using NelderMead optimization.
-- `hofFile=nothing`: What file to store equations to, as a backup.
-- `perturbationFactor=1.000000f0`: When mutating a constant, either
+- `hofFile`: What file to store equations to, as a backup.
+- `perturbationFactor`: When mutating a constant, either
     multiply or divide by (1+perturbationFactor)^(rand()+1).
-- `probNegate=0.01f0`: Probability of negating a constant in the equation
+- `probNegate`: Probability of negating a constant in the equation
     when mutating it.
-- `mutationWeights=[10.000000, 1.000000, 1.000000, 3.000000, 3.000000, 0.010000, 1.000000, 1.000000]`:
-- `annealing=true`: Whether to use simulated annealing.
-- `warmupMaxsize=0`: Whether to slowly increase the max size from 5 up to
+- `mutationWeights`: Relative probabilities of the mutations, in the order: MutateConstant, MutateOperator, AddNode, InsertNode, DeleteNode, Simplify, Randomize, DoNothing.
+- `annealing`: Whether to use simulated annealing.
+- `warmupMaxsize`: Whether to slowly increase the max size from 5 up to
     `maxsize`. If nonzero, specifies how many cycles (populations*iterations)
     before increasing by 1.
-- `verbosity=convert(Int, 1e9)`: Whether to print debugging statements or
+- `verbosity`: Whether to print debugging statements or
     not.
-- `bin_constraints=nothing`:
-- `una_constraints=nothing`:
-- `seed=nothing`: What random seed to use. `nothing` uses no seed.
-- `progress=false`: Whether to use a progress bar output (`verbosity` will
+- `bin_constraints`: See `constraints`. This is the same, but specified for binary
+    operators only (for example, if you have an operator that is both a binary
+    and unary operator).
+- `una_constraints`: Likewise, for unary operators.
+- `seed`: What random seed to use. `nothing` uses no seed.
+- `progress`: Whether to use a progress bar output (`verbosity` will
     have no effect).
-- `probPickFirst=1.0`: Expressions in subsample are chosen based on, for
+- `probPickFirst`: Expressions in subsample are chosen based on, for
     p=probPickFirst: p, p*(1-p), p*(1-p)^2, and so on.
-- `earlyStopCondition=nothing`: Float - whether to stop early if the mean loss gets below this value.
+- `earlyStopCondition`: Float - whether to stop early if the mean loss gets below this value.
     Function - a function taking (loss, complexity) as arguments and returning true or false.
-- `timeout_in_seconds=nothing`: Float64 - the time in seconds after which to exit (as an alternative to the number of iterations).
+- `timeout_in_seconds`: Float64 - the time in seconds after which to exit (as an alternative to the number of iterations).
+- `max_evals`: Int (or Nothing) - the maximum number of evaluations of expressions to perform.
+- `skip_mutation_failures`: Whether to simply skip over mutations that fail or are rejected, rather than to replace the mutated
+    expression with the original expression and proceed normally.
+- `enable_autodiff`: Whether to enable automatic differentiation functionality. This is turned off by default.
+    If turned on, this will be turned off if one of the operators does not have well-defined gradients.
+- `nested_constraints`: Specifies how many times a combination of operators can be nested. For example,
+    `[sin => [cos => 0], cos => [cos => 2]]` specifies that `cos` may never appear within a `sin`,
+    but `sin` can be nested with itself an unlimited number of times. The second term specifies that `cos`
+    can be nested up to 2 times within a `cos`, so that `cos(cos(cos(x)))` is allowed (as well as any combination
+    of `+` or `-` within it), but `cos(cos(cos(cos(x))))` is not allowed. When an operator is not specified,
+    it is assumed that it can be nested an unlimited number of times. This requires that there is no operator
+    which is used both in the unary operators and the binary operators (e.g., `-` could be both subtract, and negation).
+    For binary operators, both arguments are treated the same way, and the max of each argument is constrained.
+- `deterministic`: Use a global counter for the birth time, rather than calls to `time()`. This gives
+    perfect resolution, and is therefore deterministic. However, it is not thread safe, and must be used
+    in serial mode.
 """
 function Options(;
-    binary_operators::NTuple{nbin, Any}=(div, plus, mult),
-    unary_operators::NTuple{nuna, Any}=(exp, cos),
+    binary_operators::NTuple{nbin,Any}=(+, -, /, *),
+    unary_operators::NTuple{nuna,Any}=(),
     constraints=nothing,
     loss=L2DistLoss(),
-    ns=10, #1 sampled from every ns per mutation
-    topn=10, #samples to return per population
-    parsimony=0.000100f0,
+    ns=12, #1 sampled from every ns per mutation
+    topn=12, #samples to return per population
+    complexity_of_operators=nothing,
+    complexity_of_constants::Union{Nothing,Real}=nothing,
+    complexity_of_variables::Union{Nothing,Real}=nothing,
+    parsimony=0.0032f0,
     alpha=0.100000f0,
     maxsize=20,
     maxdepth=nothing,
     fast_cycle=false,
     migration=true,
     hofMigration=true,
-    fractionReplacedHof=0.1f0,
+    fractionReplacedHof=0.035f0,
     shouldOptimizeConstants=true,
     hofFile=nothing,
-    npopulations=nothing,
-    perturbationFactor=1.000000f0,
-    annealing=true,
+    npopulations=15,
+    perturbationFactor=0.076f0,
+    annealing=false,
     batching=false,
     batchSize=50,
-    mutationWeights=[10.000000, 1.000000, 1.000000, 3.000000, 3.000000, 0.010000, 1.000000, 1.000000],
-    crossoverProbability=0.0f0,
-    warmupMaxsizeBy=0f0,
-    useFrequency=false,
-    npop=1000,
-    ncyclesperiteration=300,
-    fractionReplaced=0.1f0,
+    mutationWeights=[0.048, 0.47, 0.79, 5.1, 1.7, 0.0020, 0.00023, 0.21],
+    crossoverProbability=0.066f0,
+    warmupMaxsizeBy=0.0f0,
+    useFrequency=true,
+    useFrequencyInTournament=true,
+    npop=33,
+    ncyclesperiteration=550,
+    fractionReplaced=0.00036f0,
     verbosity=convert(Int, 1e9),
     probNegate=0.01f0,
     seed=nothing,
     bin_constraints=nothing,
     una_constraints=nothing,
-    progress=false,
+    progress=true,
     terminal_width=nothing,
     warmupMaxsize=nothing,
-    optimizer_algorithm="NelderMead",
-    optimizer_nrestarts=3,
-    optimize_probability=0.1f0,
-    optimizer_iterations=100,
-    nrestarts=nothing,
+    optimizer_algorithm="BFGS",
+    optimizer_nrestarts=2,
+    optimize_probability=0.14f0,
+    optimizer_iterations=8,
     recorder=nothing,
     recorder_file="pysr_recorder.json",
-    probPickFirst=1.0,
-    earlyStopCondition::Union{Function, Float32, Nothing}=nothing,
+    probPickFirst=0.86f0,
+    earlyStopCondition::Union{Function,AbstractFloat,Nothing}=nothing,
     stateReturn::Bool=false,
-    use_symbolic_utils::Bool=false,
     timeout_in_seconds=nothing,
-    #sym_constraints::Union{NTuple{nconstraint, Any}, Nothing}=nothing
-    penalties=nothing#,
-    #pyLibs=Dict{String, PyObject}()
-   ) where {nuna,nbin}
-
-
-
-    if nrestarts !== nothing
-        optimizer_nrestarts = nrestarts
-    end
+    max_evals=nothing,
+    skip_mutation_failures::Bool=true,
+    enable_autodiff::Bool=false,
+    nested_constraints=nothing,
+    deterministic=false,
+) where {nuna,nbin}
     if warmupMaxsize !== nothing
-        error("warmupMaxsize is deprecated. Please use warmupMaxsizeBy, and give the time at which the warmup will end as a fraction of the total search cycles.")
+        error(
+            "warmupMaxsize is deprecated. Please use warmupMaxsizeBy, and give the time at which the warmup will end as a fraction of the total search cycles.",
+        )
     end
 
     if hofFile === nothing
@@ -283,10 +326,65 @@ function Options(;
     end
 
     @assert maxsize > 3
-    @assert warmupMaxsizeBy >= 0f0
+    @assert warmupMaxsizeBy >= 0.0f0
 
-    constraints::Union{Tuple,Array{Pair{Any,Any}, 1},Nothing}
+    # Make sure nested_constraints contains functions within our operator set:
+    if nested_constraints !== nothing
+        # Check that intersection of binary operators and unary operators is empty:
+        for op in binary_operators
+            if op ∈ unary_operators
+                error(
+                    "Operator $(op) is both a binary and unary operator. " *
+                    "You can't use nested constraints.",
+                )
+            end
+        end
 
+        # Convert to dict:
+        if !(typeof(nested_constraints) <: Dict)
+            # Convert to dict:
+            nested_constraints = Dict(
+                [cons[1] => Dict(cons[2]...) for cons in nested_constraints]...
+            )
+        end
+        for (op, nested_constraint) in nested_constraints
+            if !(op ∈ binary_operators || op ∈ unary_operators)
+                error("Operator $(op) is not in the operator set.")
+            end
+            for (nested_op, max_nesting) in nested_constraint
+                if !(nested_op ∈ binary_operators || nested_op ∈ unary_operators)
+                    error("Operator $(nested_op) is not in the operator set.")
+                end
+                @assert nested_op ∈ binary_operators || nested_op ∈ unary_operators
+                @assert max_nesting >= -1 && typeof(max_nesting) <: Int
+            end
+        end
+
+        # Lastly, we clean it up into a dict of (degree,op_idx) => max_nesting.
+        new_nested_constraints = []
+        # Dict()
+        for (op, nested_constraint) in nested_constraints
+            (degree, idx) = if op ∈ binary_operators
+                2, findfirst(isequal(op), binary_operators)
+            else
+                1, findfirst(isequal(op), unary_operators)
+            end
+            new_max_nesting_dict = []
+            # Dict()
+            for (nested_op, max_nesting) in nested_constraint
+                (nested_degree, nested_idx) = if nested_op ∈ binary_operators
+                    2, findfirst(isequal(nested_op), binary_operators)
+                else
+                    1, findfirst(isequal(nested_op), unary_operators)
+                end
+                # new_max_nesting_dict[(nested_degree, nested_idx)] = max_nesting
+                push!(new_max_nesting_dict, (nested_degree, nested_idx, max_nesting))
+            end
+            # new_nested_constraints[(degree, idx)] = new_max_nesting_dict
+            push!(new_nested_constraints, (degree, idx, new_max_nesting_dict))
+        end
+        nested_constraints = new_nested_constraints
+    end
 
     if typeof(constraints) <: Tuple
         constraints = collect(constraints)
@@ -305,9 +403,58 @@ function Options(;
         una_constraints = constraints
     end
 
-    una_constraints, bin_constraints = build_constraints(una_constraints, bin_constraints,
-                                                         unary_operators, binary_operators,
-                                                         nuna, nbin)
+    una_constraints, bin_constraints = build_constraints(
+        una_constraints, bin_constraints, unary_operators, binary_operators, nuna, nbin
+    )
+
+    # Define the complexities of everything.
+    use_complexity_mapping = (
+        complexity_of_constants !== nothing ||
+        complexity_of_variables !== nothing ||
+        complexity_of_operators !== nothing
+    )
+    if use_complexity_mapping
+        if complexity_of_operators === nothing
+            complexity_of_operators = Dict()
+        else
+            # Convert to dict:
+            complexity_of_operators = Dict(complexity_of_operators)
+        end
+
+        # Get consistent type:
+        promoted_type = promote_type(
+            (complexity_of_variables !== nothing) ? typeof(complexity_of_variables) : Int,
+            (complexity_of_constants !== nothing) ? typeof(complexity_of_constants) : Int,
+            (x -> typeof(x)).(values(complexity_of_operators))...,
+        )
+
+        # If not in dict, then just set it to 1.
+        binop_complexities = promoted_type[
+            (haskey(complexity_of_operators, op) ? complexity_of_operators[op] : 1) #
+            for op in binary_operators
+        ]
+        unaop_complexities = promoted_type[
+            (haskey(complexity_of_operators, op) ? complexity_of_operators[op] : 1) #
+            for op in unary_operators
+        ]
+
+        variable_complexity = (
+            (complexity_of_variables !== nothing) ? complexity_of_variables : 1
+        )
+        constant_complexity = (
+            (complexity_of_constants !== nothing) ? complexity_of_constants : 1
+        )
+
+        complexity_mapping = ComplexityMapping(;
+            binop_complexities=binop_complexities,
+            unaop_complexities=unaop_complexities,
+            variable_complexity=variable_complexity,
+            constant_complexity=constant_complexity,
+        )
+    else
+        complexity_mapping = ComplexityMapping(false)
+    end
+    # Finish defining complexities
 
     if maxdepth === nothing
         maxdepth = maxsize
@@ -320,7 +467,55 @@ function Options(;
     binary_operators = map(binopmap, binary_operators)
     unary_operators = map(unaopmap, unary_operators)
 
-    mutationWeights = map((x,)->convert(Float64, x), mutationWeights)
+    if enable_autodiff
+        diff_binary_operators = Any[]
+        diff_unary_operators = Any[]
+
+        test_inputs = map(x -> convert(Float32, x), LinRange(-100, 100, 99))
+        # Create grid over [-100, 100]^2:
+        test_inputs_xy = reduce(
+            hcat, reduce(hcat, ([[[x, y] for x in test_inputs] for y in test_inputs]))
+        )
+        for op in binary_operators
+            diff_op(x, y) = gradient(op, x, y)
+
+            test_output = diff_op.(test_inputs_xy[1, :], test_inputs_xy[2, :])
+            gradient_exists = all((x) -> x !== nothing, Iterators.flatten(test_output))
+            if gradient_exists
+                push!(diff_binary_operators, diff_op)
+            else
+                if verbosity > 0
+                    @warn "Automatic differentiation has been turned off, since operator $(op) does not have well-defined gradients."
+                end
+                enable_autodiff = false
+                break
+            end
+        end
+
+        for op in unary_operators
+            diff_op(x) = gradient(op, x)[1]
+            test_output = diff_op.(test_inputs)
+            gradient_exists = all((x) -> x !== nothing, test_output)
+            if gradient_exists
+                push!(diff_unary_operators, diff_op)
+            else
+                if verbosity > 0
+                    @warn "Automatic differentiation has been turned off, since operator $(op) does not have well-defined gradients."
+                end
+                enable_autodiff = false
+                break
+            end
+        end
+        diff_binary_operators = Tuple(diff_binary_operators)
+        diff_unary_operators = Tuple(diff_unary_operators)
+    end
+
+    if !enable_autodiff
+        diff_binary_operators = nothing
+        diff_unary_operators = nothing
+    end
+
+    mutationWeights = map((x,) -> convert(Float64, x), mutationWeights)
     if length(mutationWeights) != 8
         error("Not the right number of mutation probabilities given")
     end
@@ -335,9 +530,16 @@ function Options(;
             continue
         end
         @eval begin
-            Base.$_f(l::Node, r::Node)::Node = (l.constant && r.constant) ? Node($f(l.val, r.val)::AbstractFloat) : Node($op, l, r)
-            Base.$_f(l::Node, r::AbstractFloat)::Node =        l.constant ? Node($f(l.val, r)::AbstractFloat)     : Node($op, l, r)
-            Base.$_f(l::AbstractFloat, r::Node)::Node =        r.constant ? Node($f(l, r.val)::AbstractFloat)     : Node($op, l, r)
+            Base.$_f(l::Node, r::Node)::Node =
+                if (l.constant && r.constant)
+                    Node($f(l.val, r.val)::AbstractFloat)
+                else
+                    Node($op, l, r)
+                end
+            Base.$_f(l::Node, r::AbstractFloat)::Node =
+                l.constant ? Node($f(l.val, r)::AbstractFloat) : Node($op, l, r)
+            Base.$_f(l::AbstractFloat, r::Node)::Node =
+                r.constant ? Node($f(l, r.val)::AbstractFloat) : Node($op, l, r)
         end
     end
 
@@ -347,7 +549,8 @@ function Options(;
             continue
         end
         @eval begin
-            Base.$f(l::Node)::Node = l.constant ? Node($f(l.val)::AbstractFloat) : Node($op, l)
+            Base.$f(l::Node)::Node =
+                l.constant ? Node($f(l.val)::AbstractFloat) : Node($op, l)
         end
     end
 
@@ -359,17 +562,83 @@ function Options(;
         recorder = haskey(ENV, "PYSR_RECORDER") && (ENV["PYSR_RECORDER"] == "1")
     end
 
-    if typeof(earlyStopCondition) == Float32
-        earlyStopCondition = (loss, complexity) -> loss < earlyStopCondition
+    if typeof(earlyStopCondition) <: AbstractFloat
+        # Need to make explicit copy here for this to work:
+        stopping_point = Float64(earlyStopCondition)
+        earlyStopCondition = (loss, complexity) -> loss < stopping_point
     end
 
-    options = Options{typeof(binary_operators),typeof(unary_operators), typeof(loss)}(binary_operators, unary_operators, bin_constraints, una_constraints, ns, parsimony, alpha, maxsize, maxdepth, fast_cycle, migration, hofMigration, fractionReplacedHof, shouldOptimizeConstants, hofFile, npopulations, perturbationFactor, annealing, batching, batchSize, mutationWeights, crossoverProbability, warmupMaxsizeBy, useFrequency, npop, ncyclesperiteration, fractionReplaced, topn, verbosity, probNegate, nuna, nbin, seed, loss, progress, terminal_width, optimizer_algorithm, optimize_probability, optimizer_nrestarts, optimizer_iterations, recorder, recorder_file, probPickFirst, earlyStopCondition, stateReturn, use_symbolic_utils, timeout_in_seconds, penalties)#, pyLibs)
+    options = Options{
+        typeof(binary_operators),
+        typeof(unary_operators),
+        typeof(diff_binary_operators),
+        typeof(diff_unary_operators),
+        typeof(loss),
+        eltype(complexity_mapping),
+    }(
+        binary_operators,
+        unary_operators,
+        diff_binary_operators,
+        diff_unary_operators,
+        bin_constraints,
+        una_constraints,
+        complexity_mapping,
+        ns,
+        parsimony,
+        alpha,
+        maxsize,
+        maxdepth,
+        fast_cycle,
+        migration,
+        hofMigration,
+        fractionReplacedHof,
+        shouldOptimizeConstants,
+        hofFile,
+        npopulations,
+        perturbationFactor,
+        annealing,
+        batching,
+        batchSize,
+        mutationWeights,
+        crossoverProbability,
+        warmupMaxsizeBy,
+        useFrequency,
+        useFrequencyInTournament,
+        npop,
+        ncyclesperiteration,
+        fractionReplaced,
+        topn,
+        verbosity,
+        probNegate,
+        nuna,
+        nbin,
+        seed,
+        loss,
+        progress,
+        terminal_width,
+        optimizer_algorithm,
+        optimize_probability,
+        optimizer_nrestarts,
+        optimizer_iterations,
+        recorder,
+        recorder_file,
+        probPickFirst,
+        earlyStopCondition,
+        stateReturn,
+        timeout_in_seconds,
+        max_evals,
+        skip_mutation_failures,
+        enable_autodiff,
+        nested_constraints,
+        deterministic,
+    )
 
     @eval begin
-        Base.print(io::IO, tree::Node) = print(io, stringTree(tree, $options))
-        Base.show(io::IO, tree::Node) = print(io, stringTree(tree, $options))
+        Base.print(io::IO, tree::Node) = print(io, string_tree(tree, $options))
+        Base.show(io::IO, tree::Node) = print(io, string_tree(tree, $options))
     end
-    
+
     return options
 end
 
+end
