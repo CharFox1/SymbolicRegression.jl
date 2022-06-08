@@ -2,6 +2,9 @@ module EquationUtilsModule
 
 import ..CoreModule: CONST_TYPE, Node, copy_node, Options
 
+# for symbolic constraints
+using PyCall
+
 # Count the operators, constants, variables in an equation
 function count_nodes(tree::Node)::Int
     if tree.degree == 0
@@ -174,6 +177,82 @@ function index_constants(tree::Node, index_tree::NodeIndex, left_index::Int)
         left_index_here = left_index + index_tree.constant_index
         index_constants(tree.r, index_tree.r, left_index_here)
     end
+end
+
+# python function to check if expression is monontonically increasing
+py"""
+import sympy
+def is_monotonic_increasing_test(expr, interval, var):
+
+    # constant value never decreases    
+    if expr.is_constant():
+        return True
+
+    # get critical points as list
+    turning_points = list(sympy.solveset(expr.diff(var), var, interval))
+    turning_points.sort()
+    # failed to find critical points
+    # there could be 0 or infinite...
+    if (turning_points == []):
+        # fall back to simpler increasing function
+        return bool(1 if (expr.limit(var, interval.end) - expr.limit(var, interval.start)) >= 0 else 0)
+    increasing = 1
+    # turn to false if interval from start of main interval to first critical point not increasing
+    increasing = min(increasing, (1 if (expr.limit(var, turning_points[0]) - expr.limit(var, interval.start)) >= 0 else 0))
+    # check intervals between all critical points
+    for i in range(len(turning_points)-1):
+        thisPoint = turning_points[i]
+        nextPoint = turning_points[i+1]
+        increasing = min(increasing, (1 if (expr.limit(var, nextPoint) - expr.limit(var, thisPoint)) >= 0 else 0))
+        #increasing = min(increasing, sympy.is_increasing(expr, sympy.Interval(thisPoint, nextPoint, false, false), var))
+    # check last interval
+    increasing = min(increasing, (1 if (expr.limit(var, interval.end) - expr.limit(var, turning_points[-1])) >= 0 else 0))
+    #increasing = min(increasing, sympy.is_increasing(expr, sympy.Interval(turning_points[-1], interval.end, false, false), var))
+    return bool(increasing)
+"""
+
+function thermoConstraints(expr::PyObject, var::PyObject)
+
+    results = [true, true, true]
+    
+    # Axiom 1: the expr needs to pass through the origin
+    try
+        if sympy.limit(expr, var, 0, "+") != 0
+            #println("constraint 1")
+            results[0] = false
+        end
+    catch error
+        #println(error)
+        #println("SymPy cannot evaluate Axiom 1")
+        results[0] = false
+    end
+        # Axiom 2: the expr needs to converge to Henry's Law at zero pressure
+    try
+        if (sympy.limit(sympy.diff(expr, var), var, 0) == sympy.oo 
+            || sympy.limit(sympy.diff(expr, var), var, 0) == -sympy.oo 
+            || sympy.limit(sympy.diff(expr, var), var, 0) == 0)
+            #println("constraint 2")
+            results[1] = false
+        end
+    catch error
+        #println(error)
+        #println("SymPy cannot evaluate Axiom 2")
+        results[1] = false
+    end
+
+    # Axiom 3: the expr must be strictly increasing as pressure increases
+    try
+        # use custom function because sympy doesn't work as expected
+        if not(is_monotonic_increasing_test(expr, sympy.Interval(0,sympy.oo), var))
+            #println("constraint 3")
+            results[2] = false
+        end
+    catch error
+        #println("SymPy cannot evaluate Axiom 3")
+        results[2] = false
+    end
+
+    return results
 end
 
 end

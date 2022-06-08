@@ -58,6 +58,10 @@ import Printf: @printf, @sprintf
 using Pkg: Pkg
 import Random: seed!, shuffle!
 using Reexport
+
+# for symbolic constraints
+using PyCall
+
 @reexport import LossFunctions:
     MarginLoss,
     DistanceLoss,

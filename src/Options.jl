@@ -314,6 +314,8 @@ function Options(;
     enable_autodiff::Bool=false,
     nested_constraints=nothing,
     deterministic=false,
+    # for thermo constraints
+    penalties=nothing,
 ) where {nuna,nbin}
     if warmupMaxsize !== nothing
         error(
@@ -631,6 +633,7 @@ function Options(;
         enable_autodiff,
         nested_constraints,
         deterministic,
+        penalties,
     )
 
     @eval begin
