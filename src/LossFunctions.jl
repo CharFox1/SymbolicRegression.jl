@@ -2,7 +2,7 @@ module LossFunctionsModule
 
 import Random: randperm
 import LossFunctions: value, AggMode, SupervisedLoss
-import ..CoreModule: Options, Dataset, Node
+import ..CoreModule: Options, Dataset, Node, string_tree
 import ..EquationUtilsModule: compute_complexity, thermoConstraints
 import ..EvaluateEquationModule: eval_tree_array, differentiable_eval_tree_array
 
@@ -68,7 +68,6 @@ function score_func(
     dataset::Dataset{T}, baseline::T, tree::Node, options::Options
 )::Tuple{T,T} where {T<:Real}
     result_loss = eval_loss(tree, dataset, options)
-    score = loss_to_score(result_loss, baseline, tree, options)
 
     # thermo constraints
     if options.penalties !== nothing
@@ -81,7 +80,7 @@ function score_func(
         if length(dataset.varMap) >= 1 && ("p" in dataset.varMap)
             # turn tree to string for sympy to use
             # get boolean result for each constraint
-            str = stringTree(tree, options)
+            str = string_tree(tree, options)
             expr = sympy.parse_expr(str)
             #expr = sympyVar.parse_expr("p*2 + 1")
             var = sympy.symbols("p")
@@ -90,13 +89,15 @@ function score_func(
             # for each constraint, apply penalty if expression fails
             for i in 1:length(options.penalties)
                 if results[i] == false
-                    mse *= options.penalties[i]
+                    result_loss *= options.penalties[i]
                 end
             end
         else
             println("Need pressure variable \"p\"!")
         end
     end
+
+    score = loss_to_score(result_loss, baseline, tree, options)
 
     return score, result_loss
 end

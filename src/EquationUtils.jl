@@ -4,6 +4,7 @@ import ..CoreModule: CONST_TYPE, Node, copy_node, Options
 
 # for symbolic constraints
 using PyCall
+const _sympy = PyNULL() 
 
 # Count the operators, constants, variables in an equation
 function count_nodes(tree::Node)::Int
@@ -213,18 +214,21 @@ def is_monotonic_increasing_test(expr, interval, var):
 
 function thermoConstraints(expr::PyObject, var::PyObject)
 
+    # good way to check if lib needs to be loaded from PyCall/serialize.jl
+    sympy = ispynull(_sympy) ? copy!(_sympy, pyimport_conda("sympy", "sympy")) : _sympy
+
     results = [true, true, true]
     
     # Axiom 1: the expr needs to pass through the origin
     try
         if sympy.limit(expr, var, 0, "+") != 0
             #println("constraint 1")
-            results[0] = false
+            results[1] = false
         end
     catch error
         #println(error)
         #println("SymPy cannot evaluate Axiom 1")
-        results[0] = false
+        results[1] = false
     end
         # Axiom 2: the expr needs to converge to Henry's Law at zero pressure
     try
@@ -232,12 +236,12 @@ function thermoConstraints(expr::PyObject, var::PyObject)
             || sympy.limit(sympy.diff(expr, var), var, 0) == -sympy.oo 
             || sympy.limit(sympy.diff(expr, var), var, 0) == 0)
             #println("constraint 2")
-            results[1] = false
+            results[2] = false
         end
     catch error
         #println(error)
         #println("SymPy cannot evaluate Axiom 2")
-        results[1] = false
+        results[2] = false
     end
 
     # Axiom 3: the expr must be strictly increasing as pressure increases
@@ -245,11 +249,11 @@ function thermoConstraints(expr::PyObject, var::PyObject)
         # use custom function because sympy doesn't work as expected
         if not(is_monotonic_increasing_test(expr, sympy.Interval(0,sympy.oo), var))
             #println("constraint 3")
-            results[2] = false
+            results[3] = false
         end
     catch error
         #println("SymPy cannot evaluate Axiom 3")
-        results[2] = false
+        results[3] = false
     end
 
     return results
