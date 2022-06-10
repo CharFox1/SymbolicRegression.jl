@@ -654,7 +654,7 @@ function _EquationSearch(
 
     last_print_time = time()
     num_equations = 0.0
-    print_every_n_seconds = 5
+    print_every_n_seconds = 0
     equation_speed = Float32[]
 
     if ConcurrencyType in [SRDistributed, SRThreaded]
@@ -955,6 +955,7 @@ function _EquationSearch(
                 @printf("\n")
                 average_speed = sum(equation_speed) / length(equation_speed)
                 @printf("Cycles per second: %.3e\n", round(average_speed, sigdigits=3))
+                @printf("Time since last print: %.3f seconds\n", elapsed)
                 @printf(
                     "Head worker occupation: %.1f%%\n",
                     100 * head_node_time["occupied"] / (time() - head_node_time["start"])
