@@ -19,9 +19,6 @@ import ..OperatorsModule:
     sqrt_abs,
     acosh_abs,
     atanh_clip,
-    quad,
-    six_pow,
-    twelve_pow
 import ..EquationModule: Node, string_tree
 import ..OptionsStructModule: Options, ComplexityMapping
 
