@@ -56,17 +56,7 @@ function log1p_abs(x::T)::T where {T<:Real}
 end
 function acosh_abs(x::T)::T where {T<:Real}
     return acosh(abs(x) + convert(T, 1))
-end
-#SpecialFunctionsforLJ
-function quad(x::T)::T where {T<:Real}
-    return x^4
-end
-function six_pow(x::T)::T where {T<:Real}
-    return x^6
-end
-function twelve_pow(x::T)::T where {T<:Real}
-    return x^12
-end    
+end   
 
 # Generics:
 square(x) = x * x
@@ -82,11 +72,6 @@ log10_abs(x) = log10(abs(x) + 1//100000000)
 log1p_abs(x) = log(abs(x) + 1)
 acosh_abs(x) = acosh(abs(x) + 1)
                     
-##SpecialOperatoprsforLJ
-quad(x) = square(x) * square(x)
-six_pow(x) = quad(x) * square(x)
-twelve_pow(x) = six_pow(x) * six_pow(x)
-
 function sqrt_abs(x::T)::T where {T}
     return sqrt(abs(x))
 end
