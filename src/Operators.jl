@@ -71,6 +71,12 @@ log2_abs(x) = log2(abs(x) + 1//100000000)
 log10_abs(x) = log10(abs(x) + 1//100000000)
 log1p_abs(x) = log(abs(x) + 1)
 acosh_abs(x) = acosh(abs(x) + 1)
+                    
+##SpecialOperatoprsforLJ
+quad(x) = square(x) * square(x)
+six_pow(x) = quad(x) * square(x)
+twelve_pow(x) = six_pow(x) * six_pow(x)
+LJ_sum = six_pow(x) + twelve_pow(x)
 
 function sqrt_abs(x::T)::T where {T}
     return sqrt(abs(x))
