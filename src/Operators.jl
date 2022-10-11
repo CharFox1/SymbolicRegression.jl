@@ -76,7 +76,7 @@ acosh_abs(x) = acosh(abs(x) + 1)
 quad(x) = square(x) * square(x)
 six_pow(x) = quad(x) * square(x)
 twelve_pow(x) = six_pow(x) * six_pow(x)
-LJ_sum = six_pow(x) + twelve_pow(x)
+LJ_sum(x) = six_pow(x) + twelve_pow(x)
 
 function sqrt_abs(x::T)::T where {T}
     return sqrt(abs(x))
