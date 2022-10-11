@@ -57,6 +57,16 @@ end
 function acosh_abs(x::T)::T where {T<:Real}
     return acosh(abs(x) + convert(T, 1))
 end
+#SpecialFunctionsforLJ
+function quad(x::T)::T where {T<:Real}
+    return x^4
+end
+function six_pow(x::T)::T where {T<:Real}
+    return x^6
+end
+function twelve_pow(x::T)::T where {T<:Real}
+    return x^12
+end    
 
 # Generics:
 square(x) = x * x
@@ -76,7 +86,6 @@ acosh_abs(x) = acosh(abs(x) + 1)
 quad(x) = square(x) * square(x)
 six_pow(x) = quad(x) * square(x)
 twelve_pow(x) = six_pow(x) * six_pow(x)
-LJ_sum(x) = six_pow(x) + twelve_pow(x)
 
 function sqrt_abs(x::T)::T where {T}
     return sqrt(abs(x))
