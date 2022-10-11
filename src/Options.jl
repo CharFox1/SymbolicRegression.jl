@@ -18,7 +18,7 @@ import ..OperatorsModule:
     log1p_abs,
     sqrt_abs,
     acosh_abs,
-    atanh_clip,
+    atanh_clip
 import ..EquationModule: Node, string_tree
 import ..OptionsStructModule: Options, ComplexityMapping
 
